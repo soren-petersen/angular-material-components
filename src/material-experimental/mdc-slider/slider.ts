@@ -6,7 +6,12 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {coerceBooleanProperty, coerceNumberProperty} from '@angular/cdk/coercion';
+import {
+  BooleanInput,
+  coerceBooleanProperty,
+  coerceNumberProperty,
+  NumberInput,
+} from '@angular/cdk/coercion';
 import {Platform} from '@angular/cdk/platform';
 import {DOCUMENT} from '@angular/common';
 import {
@@ -287,6 +292,28 @@ export class MatSlider implements AfterViewInit, OnDestroy {
       this._foundation.destroy();
     }
   }
+
+  // The following lines of code enable us to provide a better developer experience by allowing a
+  // more intuitive & less strict syntax for using the mat-slider. For example, without this the
+  // following would be invalid:
+  //
+  // <mat-slider step="10"isDisabled>
+  //   <input mat-slider-thumb>
+  // </mat-slider>
+  //
+  // Because isDiscrete would technically be an empty string, normally a type error would be thrown.
+  // The lines below allows this syntax and we can use coerceBooleanProperty to determine the
+  // expected boolean value.
+  //
+  // Similarly, a type error would normally be thrown for step because a string is being provided.
+  // We are again able to convert it to a number using coerceNumberProperty.
+
+  static ngAcceptInputType_isDisabled: BooleanInput;
+  static ngAcceptInputType_isDiscrete: BooleanInput;
+  static ngAcceptInputType_hasTickMarks: BooleanInput;
+  static ngAcceptInputType_min: NumberInput;
+  static ngAcceptInputType_max: NumberInput;
+  static ngAcceptInputType_step: NumberInput;
 }
 
 // TODO(wagnermaciel): Figure out why I need to declare the methods on SliderAdapter this way.

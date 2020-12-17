@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {coerceNumberProperty} from '@angular/cdk/coercion';
+import {coerceNumberProperty, NumberInput} from '@angular/cdk/coercion';
 import {ChangeDetectorRef, Directive, ElementRef, Input} from '@angular/core';
 import {Thumb} from '@material/slider';
 import {MatSlider} from './slider';
@@ -84,4 +84,6 @@ import {MatSlider} from './slider';
   constructor(private _el: ElementRef, private _slider: MatSlider, private _cdr: ChangeDetectorRef) {}
 
   getRootEl(): HTMLInputElement { return this._el.nativeElement; };
+
+  static ngAcceptInputType_value: NumberInput;
 }
