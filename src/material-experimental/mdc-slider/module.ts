@@ -11,11 +11,12 @@ import {NgModule} from '@angular/core';
 import {MatCommonModule} from '@angular/material-experimental/mdc-core';
 import {MatSlider} from './slider';
 import {MatSliderThumb} from './slider-thumb';
+import {MatSliderThumbDecorator} from './slider-thumb-decorator';
 
 @NgModule({
   imports: [MatCommonModule, CommonModule],
   exports: [MatSlider],
-  declarations: [MatSlider, MatSliderThumb],
+  declarations: [MatSlider, MatSliderThumb, MatSliderThumbDecorator],
 })
 export class MatSliderModule {
 }
