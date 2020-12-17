@@ -30,32 +30,35 @@ import {MatSlider} from './slider';
   get value(): number { return this._value; };
   set value(v: number) {
     this._value = coerceNumberProperty(v);
-    // TODO(wagnermaciel): Relay this change to the MDCSliderFoundation once MatSlider is finished.
+    if (this._slider.initialized) {
+      this._slider.setValue(this._value, this.thumb);
+    }
   };
   private _value: number;
 
   /** The minimum value that this slider input can have. */
   @Input()
   get min(): number {
-    // TODO(wagnermaciel): Finish implementing "max" getter once MatSlider is finished.
-    return 0;
+    if (this._slider.isRange && this.thumb === Thumb.END) {
+      return this._slider.getValue(Thumb.START);
+    }
+    return this._slider.min;
   };
   set min(v: number) { throw Error('Invalid attribute "min" on MatSliderThumb.'); }
 
   /** The maximum value that this slider input can have. */
   @Input()
   get max(): number {
-    // TODO(wagnermaciel): Finish implementing "max" getter once MatSlider is finished.
-    return 100;
+    if (this._slider.isRange && this.thumb === Thumb.START) {
+      return this._slider.getValue(Thumb.END);
+    }
+    return this._slider.max;
   };
   set max(v: number) { throw Error('Invalid attribute "max" on MatSliderThumb.'); }
 
   /** The size of each increment between the values of the slider. */
   @Input()
-  get step(): number {
-    // TODO(wagnermaciel): Finish implementing "step" getter once MatSlider is finished.
-    return 1;
-  }
+  get step(): number { return this._slider.step; }
   set step(v: number) { throw Error('Invalid attribute "step" on MatSliderThumb.'); }
 
   /** Indicates which slider thumb this input corresponds to. */
