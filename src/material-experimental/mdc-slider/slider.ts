@@ -8,14 +8,19 @@
 
 import {coerceBooleanProperty, coerceNumberProperty} from '@angular/cdk/coercion';
 import {Platform} from '@angular/cdk/platform';
+import {DOCUMENT} from '@angular/common';
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   ContentChildren,
   ElementRef,
+  EventEmitter,
+  Inject,
   Input,
   OnDestroy,
+  Output,
   QueryList,
   ViewChild,
   ViewChildren,
@@ -26,6 +31,24 @@ import {MDCSliderAdapter, MDCSliderFoundation, Thumb, TickMark} from '@material/
 import {MatSliderThumb} from './slider-thumb';
 import {MatSliderThumbDecorator} from './slider-thumb-decorator';
 
+/** A simple event emitted by the MatSlider component. */
+export class MatSliderEvent {
+  /** The MatSlider that changed. */
+  source: MatSlider;
+
+  /** The MatSliderThumb that changed. */
+  thumb: MatSliderThumb;
+
+  /** The new value of the source slider. */
+  value: number | null;
+
+  constructor(source: MatSlider, thumb: MatSliderThumb, value: number | null) {
+    this.source = source;
+    this.thumb = thumb;
+    this.value = value;
+  }
+}
+
 /**
  * Allows users to select from a range of values by moving the slider thumb. It is similar in
  * behavior to the native `<input type="range">` element.
@@ -34,7 +57,13 @@ import {MatSliderThumbDecorator} from './slider-thumb-decorator';
   selector: 'mat-slider',
   templateUrl: 'slider.html',
   styleUrls: ['slider.css'],
-  host: {'class': 'mdc-slider'},
+  host: {
+    'class': 'mdc-slider',
+    '[class.mdc-slider--range]': 'isRange',
+    '[class.mdc-slider--disabled]': 'isDisabled',
+    '[class.mdc-slider--discrete]': 'isDiscrete',
+    '[class.mdc-slider--tick-marks]': 'hasTickMarks',
+  },
   exportAs: 'matSlider',
   encapsulation: ViewEncapsulation.None,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -52,15 +81,15 @@ export class MatSlider implements AfterViewInit, OnDestroy {
 
   /** The active section of the slider track. */
   @ViewChild('trackActive') _trackActive: ElementRef<HTMLElement>;
-  private get trackActive(): HTMLElement { return this._trackActive.nativeElement; }
+  get trackActive(): HTMLElement { return this._trackActive.nativeElement; }
 
   /** The hidden range inputs. */
   @ContentChildren(MatSliderThumb) _inputs: QueryList<MatSliderThumb>;
   private get inputs(): MatSliderThumb[] { return this._inputs ? this._inputs.toArray() : []; }
 
-  // *************** //
-  // Input variables //
-  // *************** //
+  // ****** //
+  // Inputs //
+  // ****** //
 
   /** Whether the slider is disabled. */
   @Input()
@@ -110,15 +139,37 @@ export class MatSlider implements AfterViewInit, OnDestroy {
    */
   @Input() displayWith: ((value: number) => string) | null;
 
+  // ******* //
+  // Outputs //
+  // ******* //
+
+  /** Event emitted when the slider value has changed. */
+  @Output() readonly change: EventEmitter<MatSliderEvent> = new EventEmitter<MatSliderEvent>();
+
+  /** Event emitted when the slider thumb moves. */
+  @Output() readonly input: EventEmitter<MatSliderEvent> = new EventEmitter<MatSliderEvent>();
+
+  /** Event emitted when the slider thumb starts being dragged. */
+  @Output() readonly dragStart: EventEmitter<MatSliderEvent> = new EventEmitter<MatSliderEvent>();
+
+  /** Event emitted when the slider thumb stops being dragged. */
+  @Output() readonly dragEnd: EventEmitter<MatSliderEvent> = new EventEmitter<MatSliderEvent>();
+
+
   // *************** //
   // Class variables //
   // *************** //
 
   /** Instance of the MDC slider foundation for this slider. */
-  private _foundation = new MDCSliderFoundation(new SliderAdapter(this));
+  private _foundation: MDCSliderFoundation = new MDCSliderFoundation(new SliderAdapter(this));
 
   /** Used to keep track of & render the active & inactive tick marks on the slider track. */
-  tickMarks: TickMark[] = [];
+  get tickMarks(): TickMark[] { return this._tickMarks; }
+  set tickMarks(v: TickMark[]) {
+    this._tickMarks = v;
+    this._cdr.detectChanges();
+  }
+  private _tickMarks: TickMark[];
 
   /** Whether the foundation has been initialized. */
   initialized: boolean = false;
@@ -128,20 +179,25 @@ export class MatSlider implements AfterViewInit, OnDestroy {
 
   /** The text representation of the start inputs value. */
   get startValueIndicatorText() {
-    return this._getValueIndicatorText(this.getValue(Thumb.START));
+    const value = this.getValue(Thumb.START) ?? this.min;
+    return this._getValueIndicatorText(value);
   }
 
   /** The text representation of the end inputs value. */
   get endValueIndicatorText() {
-    return this._getValueIndicatorText(this.getValue(Thumb.END));
+    const value = this.getValue(Thumb.END) ?? this.max;
+    return this._getValueIndicatorText(value);
   }
 
   // ************** //
   // Public methods //
   // ************** //
 
+  getRootEl() {
+    return this._elementRef.nativeElement;
+  }
   getValue(thumb: Thumb): number {
-    return this._getInput(thumb).value;
+    return this.getInput(thumb).value;
   }
   setValue(value: number, thumb: Thumb) {
     if (thumb === Thumb.START) {
@@ -155,19 +211,67 @@ export class MatSlider implements AfterViewInit, OnDestroy {
       ? 'mdc-slider__tick-mark--active'
       : 'mdc-slider__tick-mark--inactive';
   }
+  emitChangeEvent(value: number, thumb: Thumb) {
+    this.change.emit(this._createEvent(value, thumb));
+  }
+  emitInputEvent(value: number, thumb: Thumb) {
+    this.input.emit(this._createEvent(value, thumb));
+  }
+  emitDragStartEvent(value: number, thumb: Thumb) {
+    this.dragStart.emit(this._createEvent(value, thumb));
+  }
+  emitDragEndEvent(value: number, thumb: Thumb) {
+    this.dragEnd.emit(this._createEvent(value, thumb));
+  }
+  getDocument() {
+    return this._document;
+  }
+  getWindow() {
+    return this._document.defaultView || window;
+  }
+  getThumb(thumb: Thumb): MatSliderThumbDecorator {
+    return thumb === Thumb.END ? this.thumbs[this.thumbs.length - 1] : this.thumbs[0];
+  }
+  getThumbEl(thumb: Thumb): HTMLElement {
+    return this.getThumb(thumb).getRootEl();
+  }
+  getInput(thumb: Thumb): MatSliderThumb {
+    return thumb === Thumb.END ? this.inputs[this.inputs.length - 1] : this.inputs[0];
+  }
+  getInputEl(thumb: Thumb): HTMLInputElement {
+    return this.getInput(thumb).getRootEl();
+  }
 
   // *************** //
   // Private Methods //
   // *************** //
 
-  private _getInput(thumb: Thumb): MatSliderThumb {
-    return thumb === Thumb.END ? this.inputs[this.inputs.length - 1] : this.inputs[0];
-  }
   private _getValueIndicatorText(value: number) {
     return this.displayWith ? this.displayWith(value) : value.toString();
   }
+  private _createEvent(value: number, thumb: Thumb): MatSliderEvent {
+    return new MatSliderEvent(this, this.getInput(thumb), value);
+  }
+  private _initInputs() {
+    // Indicate to each of the inputs what thumb they correspond to.
+    if (this.isRange) {
+      this.inputs[0].thumb = Thumb.START;
+      this.inputs[1].thumb = Thumb.END;
+    } else {
+      this.inputs[0].thumb = Thumb.END;
+    }
+    // Disable the slider inputs if this slider is disabled.
+    if (this.isDisabled) {
+      this.inputs.forEach(input => input.getRootEl().disabled = true);
+    }
+  }
 
-  constructor(private _platform: Platform) {}
+  constructor(
+    private _cdr: ChangeDetectorRef,
+    private _elementRef: ElementRef<HTMLElement>,
+    private _platform: Platform,
+    @Inject(DOCUMENT) private _document: any,
+  ) {}
 
   ngAfterViewInit() {
     this.initialized = true;
@@ -183,56 +287,132 @@ export class MatSlider implements AfterViewInit, OnDestroy {
       this._foundation.destroy();
     }
   }
-
-  private _initInputs() {
-    if (this.isRange) {
-      this.inputs[0].thumb = Thumb.START;
-      this.inputs[1].thumb = Thumb.END;
-    } else {
-      this.inputs[0].thumb = Thumb.END;
-    }
-  }
 }
+
+// TODO(wagnermaciel): Figure out why I need to declare the methods on SliderAdapter this way.
+// * Object.assign(defaultAdapter, adapter) should return just adapter since it implements
+// the same base class and therefore should have the same properties.
+// * Object.keys(adapter) shows only `_delegate`. None of the classes show up.
+// * Defining the methods like this makes them show up and makes Object.assign work as expected.
 
 class SliderAdapter implements MDCSliderAdapter {
   constructor(private readonly _delegate: MatSlider) {}
-  hasClass(className: string): boolean { return null as any; }
-  addClass(className: string): void {}
-  removeClass(className: string): void {}
-  getAttribute(attribute: string): string | null { return null as any; }
-  addThumbClass(className: string, thumb: Thumb): void {}
-  removeThumbClass(className: string, thumb: Thumb): void {}
-  getInputValue(thumb: Thumb): string { return null as any; }
-  setInputValue(value: string, thumb: Thumb): void {}
-  getInputAttribute(attribute: string, thumb: Thumb): string | null { return null as any; }
-  setInputAttribute(attribute: string, value: string, thumb: Thumb): void {}
-  removeInputAttribute(attribute: string, thumb: Thumb): void {}
-  focusInput(thumb: Thumb): void {}
-  isInputFocused(thumb: Thumb): boolean { return null as any; }
-  getThumbKnobWidth(thumb: Thumb): number { return null as any; }
-  getThumbBoundingClientRect(thumb: Thumb): ClientRect { return null as any; }
-  getBoundingClientRect(): ClientRect { return null as any; }
-  isRTL(): boolean { return null as any; }
-  setThumbStyleProperty(propertyName: string, value: string, thumb: Thumb): void {}
-  removeThumbStyleProperty(propertyName: string, thumb: Thumb): void {}
-  setTrackActiveStyleProperty(propertyName: string, value: string): void {}
-  removeTrackActiveStyleProperty(propertyName: string): void {}
-  setValueIndicatorText(value: number, thumb: Thumb): void {}
-  getValueToAriaValueTextFn(): ((value: number) => string) | null { return null as any; }
-  updateTickMarks(tickMarks: TickMark[]): void {}
-  setPointerCapture(pointerId: number): void {}
-  emitChangeEvent(value: number, thumb: Thumb): void {}
-  emitInputEvent(value: number, thumb: Thumb): void {}
-  emitDragStartEvent(value: number, thumb: Thumb): void {}
-  emitDragEndEvent(value: number, thumb: Thumb): void {}
-  registerEventHandler<K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void {}
-  deregisterEventHandler<K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void {}
-  registerThumbEventHandler<K extends EventType>(thumb: Thumb, evtType: K, handler: SpecificEventListener<K>): void {}
-  deregisterThumbEventHandler<K extends EventType>(thumb: Thumb, evtType: K, handler: SpecificEventListener<K>): void {}
-  registerInputEventHandler<K extends EventType>(thumb: Thumb, evtType: K, handler: SpecificEventListener<K>): void {}
-  deregisterInputEventHandler<K extends EventType>(thumb: Thumb, evtType: K, handler: SpecificEventListener<K>): void {}
-  registerBodyEventHandler<K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void {}
-  deregisterBodyEventHandler<K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void {}
-  registerWindowEventHandler<K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void {}
-  deregisterWindowEventHandler<K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void {}
+  hasClass = (className: string): boolean => {
+    return this._delegate.getRootEl().classList.contains(className);
+  }
+  addClass = (className: string): void => {
+    this._delegate.getRootEl().classList.add(className);
+  }
+  removeClass = (className: string): void => {
+    this._delegate.getRootEl().classList.remove(className);
+  }
+  getAttribute = (attribute: string): string | null => {
+    return this._delegate.getRootEl().getAttribute(attribute);
+  }
+  addThumbClass = (className: string, thumb: Thumb): void => {
+    this._delegate.getThumbEl(thumb).classList.add(className);
+  }
+  removeThumbClass = (className: string, thumb: Thumb): void => {
+    this._delegate.getThumbEl(thumb).classList.remove(className);
+  }
+  getInputValue = (thumb: Thumb): string => {
+    return this._delegate.getInputEl(thumb).value;
+  }
+  setInputValue = (value: string, thumb: Thumb): void => {
+    this._delegate.getInput(thumb).value = coerceNumberProperty(value);
+  }
+  getInputAttribute = (attribute: string, thumb: Thumb): string | null => {
+    return this._delegate.getInputEl(thumb).getAttribute(attribute);
+  }
+  setInputAttribute = (attribute: string, value: string, thumb: Thumb): void => {
+    this._delegate.getInputEl(thumb).setAttribute(attribute, value);
+  }
+  removeInputAttribute = (attribute: string, thumb: Thumb): void => {
+    this._delegate.getInputEl(thumb).removeAttribute(attribute);
+  }
+  focusInput = (thumb: Thumb): void => {
+    this._delegate.getInputEl(thumb).focus();
+  }
+  isInputFocused = (thumb: Thumb): boolean => {
+    return this._delegate.getInputEl(thumb) === this._delegate.getDocument().activeElement;
+  }
+  getThumbKnobWidth = (thumb: Thumb): number => {
+    return this._delegate.getThumb(thumb).getKnobWidth();
+  }
+  getThumbBoundingClientRect = (thumb: Thumb): ClientRect => {
+    return this._delegate.getThumbEl(thumb).getBoundingClientRect();
+  }
+  getBoundingClientRect = (): ClientRect => {
+    return this._delegate.getRootEl().getBoundingClientRect();
+  }
+  isRTL = (): boolean => {
+    return false;
+    // throw new Error('Method not implemented.');
+  }
+  setThumbStyleProperty = (propertyName: string, value: string, thumb: Thumb): void => {
+    this._delegate.getThumbEl(thumb).style.setProperty(propertyName, value);
+  }
+  removeThumbStyleProperty = (propertyName: string, thumb: Thumb): void => {
+    this._delegate.getThumbEl(thumb).style.removeProperty(propertyName);
+  }
+  setTrackActiveStyleProperty = (propertyName: string, value: string): void => {
+    this._delegate.trackActive.style.setProperty(propertyName, value);
+  }
+  removeTrackActiveStyleProperty = (propertyName: string): void => {
+    this._delegate.trackActive.style.removeProperty(propertyName);
+  }
+  setValueIndicatorText = (value: number, thumb: Thumb): void => {
+    this._delegate.getThumb(thumb).valueIndicatorText = value.toString();
+  }
+  getValueToAriaValueTextFn = (): ((value: number) => string) | null => {
+    return this._delegate.displayWith;
+  }
+  updateTickMarks = (tickMarks: TickMark[]): void => {
+    this._delegate.tickMarks = tickMarks;
+  }
+  setPointerCapture = (pointerId: number): void => {
+    this._delegate.getRootEl().setPointerCapture(pointerId);
+  }
+  emitChangeEvent = (value: number, thumb: Thumb): void => {
+    this._delegate.emitChangeEvent(value, thumb);
+  }
+  emitInputEvent = (value: number, thumb: Thumb): void => {
+    this._delegate.emitInputEvent(value, thumb);
+  }
+  emitDragStartEvent = (value: number, thumb: Thumb): void => {
+    this._delegate.emitDragStartEvent(value, thumb);
+  }
+  emitDragEndEvent = (value: number, thumb: Thumb): void => {
+    this._delegate.emitDragEndEvent(value, thumb);
+  }
+  registerEventHandler = <K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getRootEl().addEventListener(evtType, handler);
+  }
+  deregisterEventHandler = <K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getRootEl().removeEventListener(evtType, handler);
+  }
+  registerThumbEventHandler = <K extends EventType>(thumb: Thumb, evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getThumbEl(thumb).addEventListener(evtType, handler);
+  }
+  deregisterThumbEventHandler = <K extends EventType>(thumb: Thumb, evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getThumbEl(thumb).removeEventListener(evtType, handler);
+  }
+  registerInputEventHandler = <K extends EventType>(thumb: Thumb, evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getInputEl(thumb).addEventListener(evtType, handler);
+  }
+  deregisterInputEventHandler = <K extends EventType>(thumb: Thumb, evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getInputEl(thumb).removeEventListener(evtType, handler);
+  }
+  registerBodyEventHandler = <K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getDocument().body.addEventListener(evtType, handler);
+  }
+  deregisterBodyEventHandler = <K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getDocument().body.removeEventListener(evtType, handler);
+  }
+  registerWindowEventHandler = <K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getWindow().addEventListener(evtType, handler);
+  }
+  deregisterWindowEventHandler = <K extends EventType>(evtType: K, handler: SpecificEventListener<K>): void => {
+    this._delegate.getWindow().removeEventListener(evtType, handler);
+  }
 }

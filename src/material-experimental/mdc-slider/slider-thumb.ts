@@ -22,12 +22,20 @@ import {MatSlider} from './slider';
     '[min]': 'min',
     '[max]': 'max',
     '[step]': 'step',
-    '[value]': 'value',
+    '[attr.value]': 'value',
   }
 }) export class MatSliderThumb {
-  /** The current value of this slider input. */
+  /** The value of this slider input. */
   @Input()
-  get value(): number { return this._value; };
+  get value(): number {
+    if (!this._value) {
+      if (!this._slider.initialized) { return 0; }
+      this._value = this.thumb === Thumb.START
+        ? this._slider.min
+        : this._slider.max;
+    }
+    return this._value;
+  };
   set value(v: number) {
     this._value = coerceNumberProperty(v);
     if (this._slider.initialized) {

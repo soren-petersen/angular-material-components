@@ -15,7 +15,7 @@ import {MatSliderThumbDecorator} from './slider-thumb-decorator';
 
 @NgModule({
   imports: [MatCommonModule, CommonModule],
-  exports: [MatSlider],
+  exports: [MatSlider, MatSliderThumb],
   declarations: [MatSlider, MatSliderThumb, MatSliderThumbDecorator],
 })
 export class MatSliderModule {
