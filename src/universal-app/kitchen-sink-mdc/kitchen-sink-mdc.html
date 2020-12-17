@@ -104,10 +104,21 @@
 <mat-slide-toggle>with a label</mat-slide-toggle>
 
 <h2>MDC Slider</h2>
-<mat-slider></mat-slider>
-<mat-slider value="50"></mat-slider>
-<mat-slider tickInterval="1" min="1" max="10" value="5" thumbLabel></mat-slider>
-<mat-slider disabled></mat-slider>
+<mat-slider>
+  <input mat-slider-thumb>
+</mat-slider>
+<mat-slider>
+  <input value="25" mat-slider-thumb>
+  <input value="75" mat-slider-thumb>
+</mat-slider>
+<mat-slider step="1" min="10" max="90" isDiscrete>
+  <input value="30" mat-slider-thumb>
+  <input value="70" mat-slider-thumb>
+</mat-slider>
+<mat-slider disabled>
+  <input mat-slider-thumb>
+  <input mat-slider-thumb>
+</mat-slider>
 
 <h2>MDC Tabs</h2>
 
